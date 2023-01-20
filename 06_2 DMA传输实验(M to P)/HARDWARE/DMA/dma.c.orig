@@ -1,0 +1,161 @@
+#include "stm32f4xx.h"
+#include "delay.h"
+#include "usart1.h"
+#include "led.h"
+#include "adc.h"
+#include "dma.h"
+
+uint16_t adcx = 0;								//用于存放数据的变量
+char show[24]={0};								//用于存放打印数据的数组
+
+/**********************************************************
+功  能：DMA初始化配置函数(ADC1通道)
+参  数：无
+返回值：无
+**********************************************************/
+void DMA_ADC_Hardware_Init(void)
+{
+    static DMA_InitTypeDef DMA_InitStructure;
+	//开启时钟
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_DMA2, ENABLE);
+	
+	//ADC1初始化配置
+	ADC_Hardware_Init();
+	
+	//等待DMA可以配置
+	while(DMA_GetCmdStatus(DMA2_Stream0)!=DISABLE);
+	
+	//选择传输通道0
+	DMA_InitStructure.DMA_Channel            =  DMA_Channel_0;
+	//选择传输方式，数据由外设传输到内存
+	DMA_InitStructure.DMA_DIR                 = DMA_DIR_PeripheralToMemory;
+	//选择传输数据外设的地址
+	DMA_InitStructure.DMA_PeripheralBaseAddr  = (uint32_t)&ADC1->DR;
+	//选择传输数据内存0的地址
+	DMA_InitStructure.DMA_Memory0BaseAddr     = (uint32_t)&adcx; 
+	//DMA缓冲器大小
+	DMA_InitStructure.DMA_BufferSize          = 1;
+	//外设寄存器地址不递增
+    DMA_InitStructure.DMA_PeripheralInc       = DMA_PeripheralInc_Disable;
+	//内存地址不递增
+    DMA_InitStructure.DMA_MemoryInc           = DMA_MemoryInc_Disable; 
+	//外设单个数据的位宽,长度16位
+    DMA_InitStructure.DMA_PeripheralDataSize  = DMA_PeripheralDataSize_HalfWord;
+	//内存单个数据的位宽,长度16位
+	DMA_InitStructure.DMA_MemoryDataSize 	  = DMA_MemoryDataSize_HalfWord;
+	//DMA运行模式，持续传输
+	DMA_InitStructure.DMA_Mode 				  = DMA_Mode_Circular;
+	//DMA优先级
+	DMA_InitStructure.DMA_Priority 			  = DMA_Priority_High;
+	//关闭FIFO模式
+	DMA_InitStructure.DMA_FIFOMode 			  = DMA_FIFOMode_Disable; 
+	//FIFO阈值
+	DMA_InitStructure.DMA_FIFOThreshold		  = DMA_FIFOThreshold_HalfFull;
+	//内存突发传输每次转移单个数据
+	DMA_InitStructure.DMA_MemoryBurst 		  = DMA_MemoryBurst_Single;
+	//外设突发传输每次转移单个数据
+	DMA_InitStructure.DMA_PeripheralBurst 	  = DMA_PeripheralBurst_Single;
+	//初始化DMA2配置，通道0数据流0连接的是ADC1
+	DMA_Init(DMA2_Stream0, &DMA_InitStructure);
+
+	//开启DMA2数据流0传输
+	DMA_Cmd(DMA2_Stream0,ENABLE);
+	
+	//ADCX,ADC通道，规则序列， 采样时间
+	ADC_RegularChannelConfig(ADC1,ADC_Channel_5,1,ADC_SampleTime_480Cycles);
+	//开启软件ADC1功能
+	ADC_SoftwareStartConv(ADC1);
+	//源数据变化时开启DMA传输
+	ADC_DMARequestAfterLastTransferCmd(ADC1,ENABLE);
+	//使能ADC1的DMA传输
+	ADC_DMACmd(ADC1,ENABLE);
+}
+
+/**********************************************************
+功  能：DMA初始化配置函数(USART1_TX通道)
+参  数：baudrate			串口波特率
+返回值：无
+**********************************************************/
+void DMA_USART1_Hardware_Init(uint32_t baudrate)
+{
+    static DMA_InitTypeDef DMA_InitStructure;
+	//开启时钟
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_DMA2, ENABLE);
+	
+	//串口1初始化
+	USART1_Hardware_Init(baudrate);						
+	
+	//等待DMA可以配置
+	while(DMA_GetCmdStatus(DMA2_Stream7)!=DISABLE);
+	
+	//选择传输通道4
+	DMA_InitStructure.DMA_Channel            =  DMA_Channel_4;
+	//选择传输方式，数据由外设传输到内存
+	DMA_InitStructure.DMA_DIR                 = DMA_DIR_MemoryToPeripheral;
+	//选择传输数据外设的地址
+	DMA_InitStructure.DMA_PeripheralBaseAddr  = (uint32_t)&USART1->DR;
+	//选择传输数据内存0的地址
+	DMA_InitStructure.DMA_Memory0BaseAddr     = (uint32_t)&show; 
+	//DMA缓冲器大小
+	DMA_InitStructure.DMA_BufferSize          = 1;
+	//外设寄存器地址不递增
+    DMA_InitStructure.DMA_PeripheralInc       = DMA_PeripheralInc_Disable;
+	//内存地址递增
+    DMA_InitStructure.DMA_MemoryInc           = DMA_MemoryInc_Enable; 
+	//外设单个数据的位宽,长度8位
+    DMA_InitStructure.DMA_PeripheralDataSize  = DMA_PeripheralDataSize_Byte;
+	//内存单个数据的位宽,长度8位
+	DMA_InitStructure.DMA_MemoryDataSize 	  = DMA_MemoryDataSize_Byte;
+	//DMA运行模式，正常传输
+	DMA_InitStructure.DMA_Mode 				  = DMA_Mode_Normal;
+	//DMA优先级
+	DMA_InitStructure.DMA_Priority 			  = DMA_Priority_Medium;
+	//关闭FIFO模式
+	DMA_InitStructure.DMA_FIFOMode 			  = DMA_FIFOMode_Disable; 
+	//FIFO阈值
+	DMA_InitStructure.DMA_FIFOThreshold		  = DMA_FIFOThreshold_HalfFull;
+	//内存突发传输每次转移单个数据
+	DMA_InitStructure.DMA_MemoryBurst 		  = DMA_MemoryBurst_Single;
+	//外设突发传输每次转移单个数据
+	DMA_InitStructure.DMA_PeripheralBurst 	  = DMA_PeripheralBurst_Single;
+	//初始化DMA2配置，通道4数据流7连接的是USART1_TX
+	DMA_Init(DMA2_Stream7, &DMA_InitStructure);
+}
+
+/**********************************************************
+功  能：DMA串口数据传输函数
+参  数：无
+返回值：无
+**********************************************************/
+void DMA_USART1_Cmd(void)
+{
+	//使能串口发送的DMA通道
+	USART_DMACmd(USART1,USART_DMAReq_Tx,ENABLE);
+	//关闭USART1 TX DMA1 所指示的通道
+	DMA_Cmd(DMA2_Stream7, DISABLE );
+	//DMA通道的DMA缓存的大小	
+ 	DMA_SetCurrDataCounter(DMA2_Stream7,24); 
+	//开启USART1 TX DMA1 所指示的通道	
+ 	DMA_Cmd(DMA2_Stream7, ENABLE);
+	//等待传输完成
+	while(1)
+	{
+		//等待通道传输完成
+		if(DMA_GetFlagStatus(DMA2_Stream7,DMA_FLAG_TCIF7)!=RESET)	
+		{
+			//清除传输完成标志
+			DMA_ClearFlag(DMA2_Stream7,DMA_FLAG_TCIF7);	
+			
+			break; 
+		}
+		//闪烁LED1表示正在传输
+		LED1_TOGGLE();
+		//延时
+		Delay_ms(1);
+	}
+	//熄灭LED1表示程序执行完成
+	LED1(0);
+}
+
+
+
